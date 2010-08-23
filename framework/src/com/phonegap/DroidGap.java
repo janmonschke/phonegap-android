@@ -48,6 +48,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebStorage;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.GeolocationPermissions.Callback;
 import android.webkit.WebSettings.LayoutAlgorithm;
 import android.widget.LinearLayout;
 import android.os.Build.*;
@@ -122,7 +123,7 @@ public class DroidGap extends Activity {
         // Turn on DOM storage!
         WebViewReflect.setDomStorage(settings);
         // Turn off native geolocation object in browser - we use our own :)
-        WebViewReflect.setGeolocationEnabled(settings, false);
+        WebViewReflect.setGeolocationEnabled(settings, true);
         /* Bind the appView object to the gap class methods */
         bindBrowser(appView);
         if(cupcakeStorage != null)
@@ -133,16 +134,62 @@ public class DroidGap extends Activity {
         setContentView(root);                        
     }
 	
+	public void invoke(String origin, boolean allow, boolean remember) {
+
+	}
+	
 	@Override
+    /**
+     * Called by the system when the device configuration changes while your activity is running. 
+     * 
+     * @param Configuration newConfig
+     */
     public void onConfigurationChanged(Configuration newConfig) {
       //don't reload the current page when the orientation is changed
       super.onConfigurationChanged(newConfig);
     } 
+
+    @Override
+    /**
+     * Called when the system is about to start resuming a previous activity. 
+     */
+    protected void onPause(){
+        super.onPause();
+        
+        // Pause JavaScript timers (including setInterval)
+        appView.pauseTimers();
+    }
+
+    @Override
+    /**
+     * Called when the activity will start interacting with the user. 
+     */
+    protected void onResume(){
+        super.onResume();
+        
+        // Resume JavaScript timers (including setInterval)
+        appView.resumeTimers();
+    }
     
+    @Override
+    /**
+     * The final call you receive before your activity is destroyed. 
+     */
+    public void onDestroy() {
+    	super.onDestroy();
+    	
+    	// Load blank page so that JavaScript onunload is called
+    	appView.loadUrl("about:blank");
+    	    	
+    	// Clean up objects
+    	if (accel != null) {
+    		accel.destroy();
+    	}
+    }
+
     private void bindBrowser(WebView appView)
     {
     	gap = new Device(appView, this);
-    	geo = new GeoBroker(appView, this);
     	accel = new AccelBroker(appView, this);
     	launcher = new CameraLauncher(appView, this);
     	mContacts = new ContactManager(appView, this);
@@ -155,7 +202,6 @@ public class DroidGap extends Activity {
     	
     	// This creates the new javascript interfaces for PhoneGap
     	appView.addJavascriptInterface(gap, "DroidGap");
-    	appView.addJavascriptInterface(geo, "Geo");
     	appView.addJavascriptInterface(accel, "Accel");
     	appView.addJavascriptInterface(launcher, "GapCam");
     	appView.addJavascriptInterface(mContacts, "ContactHook");
@@ -170,7 +216,9 @@ public class DroidGap extends Activity {
     	if (android.os.Build.VERSION.RELEASE.startsWith("1."))
     	{
     		cupcakeStorage = new Storage(appView);
+        	geo = new GeoBroker(appView, this);
     		appView.addJavascriptInterface(cupcakeStorage, "droidStorage");
+        	appView.addJavascriptInterface(geo, "Geo");
     	}
     }
            
@@ -249,11 +297,11 @@ public class DroidGap extends Activity {
 		    	     long totalUsedQuota, WebStorage.QuotaUpdater quotaUpdater)
 		{
 		  Log.d(TAG, "event raised onExceededDatabaseQuota estimatedSize: " + Long.toString(estimatedSize) + " currentQuota: " + Long.toString(currentQuota) + " totalUsedQuota: " + Long.toString(totalUsedQuota));  	
-		  
+		  		  
 			if( estimatedSize < MAX_QUOTA)
 		    	{	                                        
 		    	  //increase for 1Mb        		    	  		    	  
-		    		long newQuota = currentQuota + 1024*1024;		    		
+		    		long newQuota = estimatedSize;		    		
 		    		Log.d(TAG, "calling quotaUpdater.updateQuota newQuota: " + Long.toString(newQuota) );  	
 		    		quotaUpdater.updateQuota(newQuota);
 		    	}
@@ -270,6 +318,13 @@ public class DroidGap extends Activity {
 		{       
 			// This is a kludgy hack!!!!
 			Log.d(TAG, sourceID + ": Line " + Integer.toString(lineNumber) + " : " + message);              
+		}
+		
+		@Override
+		public void onGeolocationPermissionsShowPrompt(String origin, Callback callback) {
+			// TODO Auto-generated method stub
+			super.onGeolocationPermissionsShowPrompt(origin, callback);
+			callback.invoke(origin, true, false);
 		}
 		
 	}
