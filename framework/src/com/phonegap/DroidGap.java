@@ -62,7 +62,7 @@ public class DroidGap extends Activity {
 	
 	private Device gap;
 	private GeoBroker geo;
-	private AccelBroker accel;
+    private AccelListener accel;
 	private CameraLauncher launcher;
 	private ContactManager mContacts;
 	private FileUtils fs;
@@ -72,6 +72,7 @@ public class DroidGap extends Activity {
 	private CryptoHandler crypto;
 	private BrowserKey mKey;
 	private AudioHandler audio;
+    private CallbackServer callbackServer;
 
 	private Uri imageUri;
 	
@@ -107,6 +108,8 @@ public class DroidGap extends Activity {
         	appView.setWebChromeClient(new GapClient(this));
         }
            
+        appView.setWebViewClient(new GapViewClient(this));
+
         appView.setInitialScale(100);
         appView.setVerticalScrollBarEnabled(false);
         
@@ -145,8 +148,8 @@ public class DroidGap extends Activity {
      * @param Configuration newConfig
      */
     public void onConfigurationChanged(Configuration newConfig) {
-      //don't reload the current page when the orientation is changed
-      super.onConfigurationChanged(newConfig);
+        //don't reload the current page when the orientation is changed
+        super.onConfigurationChanged(newConfig);
     } 
 
     @Override
@@ -155,6 +158,9 @@ public class DroidGap extends Activity {
      */
     protected void onPause(){
         super.onPause();
+
+        // Send pause event to JavaScript
+    	appView.loadUrl("javascript:var e = document.createEvent('Events'); e.initEvent('onpause'); document.dispatchEvent(e);");
         
         // Pause JavaScript timers (including setInterval)
         appView.pauseTimers();
@@ -166,6 +172,9 @@ public class DroidGap extends Activity {
      */
     protected void onResume(){
         super.onResume();
+
+        // Send resume event to JavaScript
+    	appView.loadUrl("javascript:var e = document.createEvent('Events'); e.initEvent('onresume'); document.dispatchEvent(e);");
         
         // Resume JavaScript timers (including setInterval)
         appView.resumeTimers();
@@ -185,12 +194,40 @@ public class DroidGap extends Activity {
     	if (accel != null) {
     		accel.destroy();
     	}
+    	if (launcher != null) {
+    		
+    	}
+    	if (mContacts != null) {
+    		
+    	}
+    	if (fs != null) {
+    		
+    	}
+    	if (netMan != null) {
+    		
+    	}
+    	if (mCompass != null) {
+    		mCompass.destroy();
+    	}
+    	if (crypto != null) {
+    		
+    	}
+    	if (mKey != null) {
+    		
+    	}
+    	if (audio != null) {
+    		
+    	}
+    	if (callbackServer != null) {
+    		callbackServer.destroy();
+    	}
     }
 
     private void bindBrowser(WebView appView)
     {
+        callbackServer = new CallbackServer();
     	gap = new Device(appView, this);
-    	accel = new AccelBroker(appView, this);
+        accel = new AccelListener(appView, this);
     	launcher = new CameraLauncher(appView, this);
     	mContacts = new ContactManager(appView, this);
     	fs = new FileUtils(appView);
@@ -211,11 +248,11 @@ public class DroidGap extends Activity {
     	appView.addJavascriptInterface(crypto, "GapCrypto");
     	appView.addJavascriptInterface(mKey, "BackButton");
     	appView.addJavascriptInterface(audio, "GapAudio");
-    	
+        appView.addJavascriptInterface(callbackServer, "CallbackServer");
     	
     	if (android.os.Build.VERSION.RELEASE.startsWith("1."))
     	{
-    		cupcakeStorage = new Storage(appView);
+            cupcakeStorage = new Storage(appView, this);
         	geo = new GeoBroker(appView, this);
     		appView.addJavascriptInterface(cupcakeStorage, "droidStorage");
         	appView.addJavascriptInterface(geo, "Geo");
@@ -227,6 +264,24 @@ public class DroidGap extends Activity {
 	{
 		appView.loadUrl(url);
 	}
+    
+    /**
+     * Send JavaScript statement back to JavaScript.
+     * 
+     * @param message
+     */
+    public void sendJavascript(String statement) {
+    	this.callbackServer.sendJavascript(statement);
+    }
+    
+    /**
+     * Get the port that the callback server is listening on.
+     * 
+     * @return
+     */
+    public int getPort() {
+    	return this.callbackServer.getPort();
+    }
 	
 	
   /**
@@ -329,7 +384,22 @@ public class DroidGap extends Activity {
 		
 	}
 	
-  
+    public class GapViewClient extends WebViewClient {
+
+        Context mCtx;
+
+        public GapViewClient(Context ctx) {
+            mCtx = ctx;
+        }
+        
+        public void onPageFinished  (WebView view, String url) {
+            // Try firing the onNativeReady event in JS. If it fails because the JS is
+            // not loaded yet then just set a flag so that the onNativeReady can be fired
+            // from the JS side when the JS gets to that code.
+    		appView.loadUrl("javascript:try{ PhoneGap.onNativeReady.fire(); console.log('FIRE!');}catch(e){_nativeReady = true; console.log('native=TRUE');}");
+        }
+    }
+
     public boolean onKeyDown(int keyCode, KeyEvent event)
     {
     	
