@@ -286,7 +286,6 @@ public class DroidGap extends Activity {
 
         }
         
-        //this.addService("Notification", "com.phonegap.DroidGap.Alertmanager");
         this.addService("Geolocation", "com.phonegap.GeoBroker");
         this.addService("Device", "com.phonegap.Device");
         this.addService("Accelerometer", "com.phonegap.AccelListener");
