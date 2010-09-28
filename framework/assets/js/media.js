@@ -1,8 +1,14 @@
+
 /**
  * List of media objects.
+ * PRIVATE
  */
 PhoneGap.mediaObjects = {};
 
+/**
+ * Object that receives native callbacks.
+ * PRIVATE
+ */
 PhoneGap.Media = function() {};
 
 /**
@@ -52,26 +58,55 @@ PhoneGap.Media.onStatus = function(id, msg, value) {
  *
  * @param src                   The file name or url to play
  * @param successCallback       The callback to be called when the file is done playing or recording.
- *                                  successCallback()
+ *                                  successCallback() - OPTIONAL
  * @param errorCallback         The callback to be called if there is an error.
- *                                  errorCallback(int errorCode)
+ *                                  errorCallback(int errorCode) - OPTIONAL
  * @param statusCallback        The callback to be called when media status has changed.
- *                                  statusCallback(int statusCode)
+ *                                  statusCallback(int statusCode) - OPTIONAL
+ * @param positionCallback      The callback to be called when media position has changed.
+ *                                  positionCallback(long position) - OPTIONAL
  */
-Media = function(src, successCallback, errorCallback, statusCallback) {
+Media = function(src, successCallback, errorCallback, statusCallback, positionCallback) {
+
+    // successCallback optional
+    if (successCallback && (typeof successCallback != "function")) {
+        console.log("Media Error: successCallback is not a function");
+        return;
+    }
+
+    // errorCallback optional
+    if (errorCallback && (typeof errorCallback != "function")) {
+        console.log("Media Error: errorCallback is not a function");
+        return;
+    }
+
+    // statusCallback optional
+    if (statusCallback && (typeof statusCallback != "function")) {
+        console.log("Media Error: statusCallback is not a function");
+        return;
+    }
+
+    // statusCallback optional
+    if (positionCallback && (typeof positionCallback != "function")) {
+        console.log("Media Error: positionCallback is not a function");
+        return;
+    }
+
     this.id = PhoneGap.createUUID();
     PhoneGap.mediaObjects[this.id] = this;
     this.src = src;
     this.successCallback = successCallback;
     this.errorCallback = errorCallback;
     this.statusCallback = statusCallback;
+    this.positionCallback = positionCallback;
     this._duration = -1;
+    this._position = -1;
 };
 
 // Media messages
 Media.MEDIA_STATE = 1;
 Media.MEDIA_DURATION = 2;
-Media.MEDIA_ERROR = 3;
+Media.MEDIA_ERROR = 9;
 
 // Media states
 Media.MEDIA_NONE = 0;
@@ -100,21 +135,21 @@ MediaError.MEDIA_ERR_NONE_SUPPORTED = 4;
  * Start or resume playing audio file.
  */
 Media.prototype.play = function() {
-    GapAudio.startPlayingAudio(this.id, this.src);
+    PhoneGap.execAsync(null, null, "Media", "startPlayingAudio", [this.id, this.src]);
 };
 
 /**
  * Stop playing audio file.
  */
 Media.prototype.stop = function() {
-    GapAudio.stopPlayingAudio(this.id);
+    return PhoneGap.execAsync(null, null, "Media", "stopPlayingAudio", [this.id]);
 };
 
 /**
  * Pause playing audio file.
  */
 Media.prototype.pause = function() {
-    GapAudio.pausePlayingAudio(this.id);
+    PhoneGap.execAsync(null, null, "Media", "pausePlayingAudio", [this.id]);
 };
 
 /**
@@ -132,21 +167,21 @@ Media.prototype.getDuration = function() {
  *
  * @return
  */
-Media.prototype.getCurrentPosition = function() {
-    return GapAudio.getCurrentPositionAudio(this.id);
+Media.prototype.getCurrentPosition = function(success, fail) {
+    PhoneGap.execAsync(success, fail, "Media", "getCurrentPositionAudio", [this.id]);
 };
 
 /**
  * Start recording audio file.
  */
 Media.prototype.startRecord = function() {
-    GapAudio.startRecordingAudio(this.id, this.src);
+    PhoneGap.execAsync(null, null, "Media", "startRecordingAudio", [this.id, this.src]);
 };
 
 /**
  * Stop recording audio file.
  */
 Media.prototype.stopRecord = function() {
-    GapAudio.stopRecordingAudio(this.id);
+    PhoneGap.execAsync(null, null, "Media", "stopRecordingAudio", [this.id]);
 };
 

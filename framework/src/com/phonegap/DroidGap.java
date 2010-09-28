@@ -1,4 +1,4 @@
-	package com.phonegap;
+package com.phonegap;
 /* License (MIT)
  * Copyright (c) 2008 Nitobi
  * website: http://phonegap.com
@@ -24,10 +24,8 @@
 
 
 
-import com.phonegap.api.Command;
-import java.util.HashMap;
-import java.util.Map.Entry;
-import com.phonegap.api.CommandManager;
+import com.phonegap.api.Plugin;
+import com.phonegap.api.PluginManager;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -71,35 +69,28 @@ import android.widget.LinearLayout;
  *       @Override
  *       public void onCreate(Bundle savedInstanceState) {
  *         super.onCreate(savedInstanceState);
- *         super.addModule("com.phonegap.examples.MyModule", "MyModule");
  *         super.loadUrl("file:///android_asset/www/index.html");
  *       }
  *     }
  */
 public class DroidGap extends Activity {
-		
-	private static final String LOG_TAG = "DroidGap";
+
+    private static final String LOG_TAG = "DroidGap";
 
     protected WebView appView;					// The webview for our app
 	protected ImageView splashScreen;
 	protected Boolean loadInWebView = false;
-	private LinearLayout root;	
-	
-	private Device gap;
-	private BrowserKey mKey;
+    private LinearLayout root;
+
+    private BrowserKey mKey;
     public CallbackServer callbackServer;
-	private CommandManager commandManager;
-	
+	private PluginManager pluginManager;
+
     private String url;							// The initial URL for our app
     private String baseUrl;						// The base of the initial URL for our app
 
-    // Variables to manage ActivityResultCallbacks
-    private int activityResultCallbackCounter = 1000;
-    private HashMap<Integer,ActivityResultModule> activityResultCallbacks = new HashMap<Integer,ActivityResultModule>();
-    
-    // List of modules started and managed
-    private HashMap<String,Module>modules = new HashMap<String,Module>();
-     
+    private Plugin activityResultCallback = null;	// Plugin to call when activity result is received
+         
     /** 
      * Called when the activity is first created. 
      * 
@@ -132,16 +123,19 @@ public class DroidGap extends Activity {
  		*/
 
         initWebView();
-        
-        root.addView(appView);
-
+        root.addView(this.appView);
         setContentView(root);        
 	}
 	
+    /**
+     * Create and initialize web container.
+     */
 	private void initWebView() {
-		appView = new WebView(DroidGap.this);
 		
-        appView.setLayoutParams(new LinearLayout.LayoutParams(
+		// Create web container
+		this.appView = new WebView(DroidGap.this);
+		
+		this.appView.setLayoutParams(new LinearLayout.LayoutParams(
         		ViewGroup.LayoutParams.FILL_PARENT,
         		ViewGroup.LayoutParams.FILL_PARENT, 
         		1.0F));
@@ -149,39 +143,39 @@ public class DroidGap extends Activity {
         WebViewReflect.checkCompatibility();
 
         if (android.os.Build.VERSION.RELEASE.startsWith("2.")) {
-        	appView.setWebChromeClient(new EclairClient(DroidGap.this));        	
+        	this.appView.setWebChromeClient(new EclairClient(DroidGap.this));        	
         }
         else {
-        	appView.setWebChromeClient(new GapClient(DroidGap.this));
+        	this.appView.setWebChromeClient(new GapClient(DroidGap.this));
         }
            
-        appView.setWebViewClient(new GapViewClient(this));
+        this.appView.setWebViewClient(new GapViewClient(this));
 
-        appView.setInitialScale(100);
-        appView.setVerticalScrollBarEnabled(false);
-        appView.requestFocusFromTouch();
+        this.appView.setInitialScale(100);
+        this.appView.setVerticalScrollBarEnabled(false);
+        this.appView.requestFocusFromTouch();
 
-        WebSettings settings = appView.getSettings();
+        // Enable JavaScript
+        WebSettings settings = this.appView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setLayoutAlgorithm(LayoutAlgorithm.NORMAL);
 
-    	Package pack = this.getClass().getPackage();
-    	String appPackage = pack.getName();
-    	
+        // Enable database
+        Package pack = this.getClass().getPackage();
+        String appPackage = pack.getName();
         WebViewReflect.setStorage(settings, true, "/data/data/" + appPackage + "/app_database/");
-        
-        // Turn on DOM storage!
+
+        // Enable DOM storage
         WebViewReflect.setDomStorage(settings);
-        // Turn off native geolocation object in browser - we use our own :)
+        
+        // Enable built-in geolocation
         WebViewReflect.setGeolocationEnabled(settings, true);
-        // Bind the appView object to the gap class methods
-        bindBrowser(appView);
-        if (this.getModule("com.phonegap.Storage") != null) {
-        	Storage cupcakeStorage = (Storage)this.getModule("com.phonegap.Storage");
-            cupcakeStorage.setStorage(appPackage);
-        }
+
+        // Bind PhoneGap objects to JavaScript
+        this.bindBrowser(this.appView);
 	}
+
 	
 	@Override
     /**
@@ -198,46 +192,34 @@ public class DroidGap extends Activity {
     /**
      * Called when the system is about to start resuming a previous activity. 
      */
-    protected void onPause(){
+    protected void onPause() {
         super.onPause();
 
-        // Forward to modules
-		java.util.Set<Entry<String,Module>> s = this.modules.entrySet();
-        java.util.Iterator<Entry<String,Module>> it = s.iterator();
-        while(it.hasNext()) {
-            Entry<String,Module> entry = it.next();
-            Module module = entry.getValue();
-            module.onPause();
-		}
-
+        // Forward to plugins
+        this.pluginManager.onPause();
+        
         // Send pause event to JavaScript
-        appView.loadUrl("javascript:try{PhoneGap.onPause.fire();}catch(e){};");
+        this.appView.loadUrl("javascript:try{PhoneGap.onPause.fire();}catch(e){};");
         
         // Pause JavaScript timers (including setInterval)
-        appView.pauseTimers();
+        this.appView.pauseTimers();
     }
 
     @Override
     /**
      * Called when the activity will start interacting with the user. 
      */
-    protected void onResume(){
+    protected void onResume() {
         super.onResume();
 
-        // Forward to modules
-		java.util.Set<Entry<String,Module>> s = this.modules.entrySet();
-        java.util.Iterator<Entry<String,Module>> it = s.iterator();
-        while(it.hasNext()) {
-            Entry<String,Module> entry = it.next();
-            Module module = entry.getValue();
-            module.onResume();
-		}
+        // Forward to plugins
+        this.pluginManager.onResume();
         
         // Send resume event to JavaScript
-        appView.loadUrl("javascript:try{PhoneGap.onResume.fire();}catch(e){};");
+        this.appView.loadUrl("javascript:try{PhoneGap.onResume.fire();}catch(e){};");
         
         // Resume JavaScript timers (including setInterval)
-        appView.resumeTimers();
+        this.appView.resumeTimers();
     }
     
     @Override
@@ -248,100 +230,74 @@ public class DroidGap extends Activity {
     	super.onDestroy();
     	
     	// Make sure pause event is sent if onPause hasn't been called before onDestroy
-    	appView.loadUrl("javascript:try{PhoneGap.onPause.fire();}catch(e){};");
+       	this.appView.loadUrl("javascript:try{PhoneGap.onPause.fire();}catch(e){};");
     	
     	// Load blank page so that JavaScript onunload is called
-    	appView.loadUrl("about:blank");
+       	this.appView.loadUrl("about:blank");
     	    	
     	// Clean up objects
-    	if (mKey != null) {
-    		
+    	if (this.mKey != null) {
     	}
     	
-    	// Clean up modules
-		java.util.Set<Entry<String,Module>> s = this.modules.entrySet();
-        java.util.Iterator<Entry<String,Module>> it = s.iterator();
-        while(it.hasNext()) {
-            Entry<String,Module> entry = it.next();
-            Module module = entry.getValue();
-            module.onDestroy();
-		}
-    	
-    	if (callbackServer != null) {
-    		callbackServer.destroy();
+        // Forward to plugins
+        this.pluginManager.onDestroy();
+
+    	if (this.callbackServer != null) {
+    		this.callbackServer.destroy();
     	}
     }
 
+    /**
+     * Add a class that implements a service.
+     * 
+     * @param serviceType
+     * @param className
+     */
+    public void addService(String serviceType, String className) {
+    	this.pluginManager.addService(serviceType, className);
+    }
+
+    /**
+     * Bind PhoneGap objects to JavaScript.
+     * 
+     * @param appView
+     */
     private void bindBrowser(WebView appView) {
-        callbackServer = new CallbackServer();
-    	commandManager = new CommandManager(appView, this);
-    	gap = new Device(appView, this);
-    	mKey = new BrowserKey(appView, this);
+        this.callbackServer = new CallbackServer();
+    	this.pluginManager = new PluginManager(appView, this);
+        this.mKey = new BrowserKey(appView, this);
     	
     	// This creates the new javascript interfaces for PhoneGap
-    	appView.addJavascriptInterface(commandManager, "CommandManager");
-    	appView.addJavascriptInterface(gap, "DroidGap");
-        this.addModule("com.phonegap.AccelListener", "Accel");
-        this.addModule("com.phonegap.CameraLauncher", "GapCam");
-        this.addModule("com.phonegap.ContactManager", "ContactHook");
-        this.addModule("com.phonegap.FileUtils", "FileUtil");
-        this.addModule("com.phonegap.NetworkManager", "NetworkManager");
-        this.addModule("com.phonegap.CompassListener", "CompassHook");
-        this.addModule("com.phonegap.CryptoHandler", "GapCrypto");
-    	appView.addJavascriptInterface(mKey, "BackButton");
-        this.addModule("com.phonegap.AudioHandler", "GapAudio");
-        appView.addJavascriptInterface(callbackServer, "CallbackServer");
+    	appView.addJavascriptInterface(this.pluginManager, "PluginManager");
+        
+        appView.addJavascriptInterface(this.mKey, "BackButton");
+        
+        appView.addJavascriptInterface(this.callbackServer, "CallbackServer");
     	appView.addJavascriptInterface(new SplashScreen(this), "SplashScreen");
-    	
-    	if (android.os.Build.VERSION.RELEASE.startsWith("1."))
-    	{
-            this.addModule("com.phonegap.Storage", "droidStorage");
-            this.addModule("com.phonegap.GeoBroker", "Geo");
+
+    	// Add in support for storage and location for Android 1.X devices
+        if (android.os.Build.VERSION.RELEASE.startsWith("1.")) {
+            Package pack = this.getClass().getPackage();
+            String appPackage = pack.getName();
+            Storage cupcakeStorage = (Storage)this.pluginManager.addPlugin("com.phonegap.Storage");
+        	cupcakeStorage.setStorage(appPackage);
+
+
         }
-    }
-    
-    @SuppressWarnings("unchecked")
-    /**
-     * Add module to be loaded and made available from JavaScript.
-     * 
-     * @param className				The class to load
-     * @param javascriptInterface	Bind the object to Javascript so that the methods can be 
-     * 								accessed from Javascript using this variable name.
-     */
-	public Object addModule(String className, String javascriptInterface) {
-    	System.out.println("DroidGap.addModule("+className+", "+javascriptInterface+")");
-    	try {
-    		  Class cl = Class.forName(className);
-     		  Class partypes[] = new Class[2];
-              partypes[0] = android.webkit.WebView.class;
-              partypes[1] = com.phonegap.DroidGap.class;
-              java.lang.reflect.Constructor<Module> ct = cl.getConstructor(partypes);
-              Object arglist[] = new Object[2];
-              arglist[0] = this.appView;
-              arglist[1] = this;
-              Module module = ct.newInstance(arglist);
-              this.modules.put(className, module);
-              if (javascriptInterface != null) {
-            	  this.appView.addJavascriptInterface(module, javascriptInterface);
-              }
-              return module;
-    	}
-    	catch (Exception e) {
-    		  e.printStackTrace();
-    		  System.out.println("Error adding module "+className+".");
-    	}
-    	return null;
-    }
-    
-    /**
-     * Get the loaded module.
-     * 
-     * @param className				The class of the loaded module.
-     * @return
-     */
-    public Object getModule(String className) {
-    	Object module = this.modules.get(className);
-    	return module;
+        
+        this.addService("Geolocation", "com.phonegap.GeoBroker");
+        this.addService("Device", "com.phonegap.Device");
+        this.addService("Accelerometer", "com.phonegap.AccelListener");
+        this.addService("Compass", "com.phonegap.CompassListener");
+        this.addService("Media", "com.phonegap.AudioHandler");
+        this.addService("Camera", "com.phonegap.CameraLauncher");
+        this.addService("Contacts", "com.phonegap.ContactManager");
+        this.addService("Crypto", "com.phonegap.CryptoHandler");
+        this.addService("File", "com.phonegap.FileUtils");
+        this.addService("Location", "com.phonegap.GeoBroker");
+        this.addService("Network Status", "com.phonegap.NetworkManager");
+        this.addService("Storage", "com.phonegap.Storage");
+        this.addService("Temperature", "com.phonegap.TempListener");
     }
  
     /**
@@ -384,70 +340,110 @@ public class DroidGap extends Activity {
     	return this.callbackServer.getPort();
     }
 	
-  /**
-    * Provides a hook for calling "alert" from javascript. Useful for
-    * debugging your javascript.
-  */
-	public class GapClient extends WebChromeClient {				
-		
-		Context mCtx;
-		public GapClient(Context ctx)
-		{
-			mCtx = ctx;
-		}
-		
-		@Override
-	    public boolean onJsAlert(WebView view, String url, String message, JsResult result) {
-	        Log.d(LOG_TAG, message);
-	        // This shows the dialog box.  This can be commented out for dev
-	        AlertDialog.Builder alertBldr = new AlertDialog.Builder(mCtx);
-	        GapOKDialog okHook = new GapOKDialog();
-	        GapCancelDialog cancelHook = new GapCancelDialog();
-	        alertBldr.setMessage(message);
-	        alertBldr.setTitle("Alert");
-	        alertBldr.setCancelable(true);
-	        alertBldr.setPositiveButton("OK", okHook);
-	        alertBldr.setNegativeButton("Cancel", cancelHook);
-	        alertBldr.show();
-	        result.confirm();
-	        return true;
-	    }
-		
-		/*
-		 * This is the Code for the OK Button
-		 */
-		
-		public class GapOKDialog implements DialogInterface.OnClickListener {
+    /**
+     * Provides a hook for calling "alert" from javascript. Useful for
+     * debugging your javascript.
+     */
+    public class GapClient extends WebChromeClient {
 
-			public void onClick(DialogInterface dialog, int which) {
-				// TODO Auto-generated method stub
-				dialog.dismiss();
-			}			
-		
-		}
-		
-		public class GapCancelDialog implements DialogInterface.OnClickListener {
+        private Context ctx;
+        
+        /**
+         * Constructor.
+         * 
+         * @param ctx
+         */
+        public GapClient(Context ctx) {
+            this.ctx = ctx;
+        }
 
-			public void onClick(DialogInterface dialog, int which) {
-				// TODO Auto-generated method stub
-				dialog.dismiss();
-			}			
-		
-		}
-	  
+        /**
+         * Tell the client to display a javascript alert dialog.
+         * 
+         * @param view
+         * @param url
+         * @param message
+         * @param result
+         */
+        @Override
+        public boolean onJsAlert(WebView view, String url, String message, final JsResult result) {
+            Log.d(LOG_TAG, message);
+            AlertDialog.Builder dlg = new AlertDialog.Builder(this.ctx);
+            dlg.setMessage(message);
+            dlg.setTitle("Alert");
+            dlg.setCancelable(false);
+            dlg.setPositiveButton(android.R.string.ok,
+            	new AlertDialog.OnClickListener() {
+                	public void onClick(DialogInterface dialog, int which) {
+                		result.confirm();
+                	}
+            	});
+            dlg.create();
+            dlg.show();
+            return true;
+        }       
 
-	}
-	
-	public final class EclairClient extends GapClient
-	{		
+        /**
+         * Tell the client to display a confirm dialog to the user.
+         * 
+         * @param view
+         * @param url
+         * @param message
+         * @param result
+         */
+        @Override
+        public boolean onJsConfirm(WebView view, String url, String message, final JsResult result) {
+            AlertDialog.Builder dlg = new AlertDialog.Builder(this.ctx);
+            dlg.setMessage(message);
+            dlg.setTitle("Confirm");
+            dlg.setCancelable(false);
+            dlg.setPositiveButton(android.R.string.ok, 
+            	new DialogInterface.OnClickListener() {
+                	public void onClick(DialogInterface dialog, int which) {
+                		result.confirm();
+                    }
+                });
+            dlg.setNegativeButton(android.R.string.cancel, 
+            	new DialogInterface.OnClickListener() {
+                	public void onClick(DialogInterface dialog, int which) {
+                		result.cancel();
+                    }
+                });
+            dlg.create();
+            dlg.show();
+            return true;
+        }
+
+    }
+
+    /**
+     * WebChromeClient that extends GapClient with additional support for Android 2.X
+     */
+    public final class EclairClient extends GapClient {
+        
 		private String TAG = "PhoneGapLog";
 		private long MAX_QUOTA = 100 * 1024 * 1024;
-		
-		public EclairClient(Context ctx) {
-			super(ctx);
-			// TODO Auto-generated constructor stub
-		}
-		
+
+		/**
+		 * Constructor.
+		 * 
+		 * @param ctx
+		 */
+        public EclairClient(Context ctx) {
+            super(ctx);
+        }
+
+        /**
+         * Handle database quota exceeded notification.
+         *
+         * @param url
+         * @param databaseIdentifier
+         * @param currentQuota
+         * @param estimatedSize
+         * @param totalUsedQuota
+         * @param quotaUpdater
+         */
+        @Override
 		public void onExceededDatabaseQuota(String url, String databaseIdentifier, long currentQuota, long estimatedSize,
 		    	     long totalUsedQuota, WebStorage.QuotaUpdater quotaUpdater)
 		{
@@ -469,6 +465,7 @@ public class DroidGap extends Activity {
 		}		
 		                    
 		// console.log in api level 7: http://developer.android.com/guide/developing/debug-tasks.html
+        @Override
 		public void onConsoleMessage(String message, int lineNumber, String sourceID)
 		{       
 			// This is a kludgy hack!!!!
@@ -491,7 +488,7 @@ public class DroidGap extends Activity {
 
     	// TODO: hide splash screen here
 
-    	DroidGap mCtx;
+        DroidGap ctx;
 
         /**
          * Constructor.
@@ -499,7 +496,7 @@ public class DroidGap extends Activity {
          * @param ctx
          */
         public GapViewClient(DroidGap ctx) {
-            mCtx = ctx;
+            this.ctx = ctx;
         }
         
         /**
@@ -573,8 +570,8 @@ public class DroidGap extends Activity {
         		}
 
         		// If our app or file:, then load into our webview
-        		if (loadInWebView || url.startsWith("file://") || mCtx.baseUrl.equals(newBaseUrl)) {
-        			appView.loadUrl(url);
+        		if (this.ctx.loadInWebView || url.startsWith("file://") || this.ctx.baseUrl.equals(newBaseUrl)) {
+        			this.ctx.appView.loadUrl(url);
         		}
   		
         		// If not our application, let default viewer handle
@@ -644,11 +641,11 @@ public class DroidGap extends Activity {
      */
     public void hideSplashScreen() {
     	root.removeView(splashScreen);
-    	root.addView(appView);
+    	root.addView(this.appView);
     }
     
     /**
-     * Any calls to Activity.startActivityForResult must go through ActivityResultCallback, so 
+     * Any calls to Activity.startActivityForResult must use method below, so 
      * the result can be routed to them correctly.  
      * 
      * This is done to eliminate the need to modify DroidGap.java to receive activity results.
@@ -660,27 +657,29 @@ public class DroidGap extends Activity {
      */
     @Override
     public void startActivityForResult(Intent intent, int requestCode) throws RuntimeException {
-    	if ((requestCode < 0) || this.activityResultCallbacks.containsKey(requestCode)) {
-       		super.startActivityForResult(intent, requestCode);   		
+    	System.out.println("startActivityForResult(intent,"+requestCode+")");
+    	if (requestCode == -1) {
+    		super.startActivityForResult(intent, requestCode);
     	}
     	else {
-    		throw new RuntimeException("PhoneGap Exception: Do not call startActivityForResult() directly. Implement ActivityResultCallback instead.");
+    		throw new RuntimeException("PhoneGap Exception: Call startActivityForResult(Command, Intent) instead.");
     	}
     }
-    
+
     /**
-     * Add activity result callback to receive onActivityResult() callbacks.
-     * 
-     * @param callback		The callback class
-     * @return				The request code to use for the callback
+     * Launch an activity for which you would like a result when it finished. When this activity exits, 
+     * your onActivityResult() method will be called.
+     *  
+     * @param command			The command object
+     * @param intent			The intent to start
+     * @param requestCode		The request code that is passed to callback to identify the activity
      */
-    public int addActivityResult(ActivityResultModule callback) {
-    	int requestCode = this.activityResultCallbackCounter++;
-    	this.activityResultCallbacks.put(requestCode, callback);
-    	return requestCode;
+    public void startActivityForResult(Plugin command, Intent intent, int requestCode) {
+    	this.activityResultCallback = command;
+    	super.startActivityForResult(intent, requestCode);
     }
 
-    @Override
+     @Override
     /**
      * Called when an activity you launched exits, giving you the requestCode you started it with,
      * the resultCode it returned, and any additional data from it. 
@@ -692,10 +691,9 @@ public class DroidGap extends Activity {
      */
     protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
         super.onActivityResult(requestCode, resultCode, intent);
-        
-        ActivityResultModule callback = this.activityResultCallbacks.get(requestCode);
+        Plugin callback = this.activityResultCallback;
         if (callback != null) {
-        	callback.onActivityResult(requestCode, resultCode, intent);        	
+        	callback.onActivityResult(requestCode, resultCode, intent); 
         }        
-    }      
+    }
 }

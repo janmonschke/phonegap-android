@@ -2,27 +2,34 @@ package com.phonegap;
 
 import java.util.List;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+
+import com.phonegap.api.Plugin;
+import com.phonegap.api.PluginResult;
+
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.content.Context;
+import android.content.Intent;
 import android.webkit.WebView;
 
 /**
  * This class listens to the compass sensor and stores the latest heading value.
  */
-public class CompassListener extends Module implements SensorEventListener{
+public class CompassListener implements SensorEventListener, Plugin{
 
 	public static int STOPPED = 0;
 	public static int STARTING = 1;
     public static int RUNNING = 2;
     public static int ERROR_FAILED_TO_START = 3;
     
-    public float TIMEOUT = 30000;		// Timeout in msec to shut off listener
+    public long TIMEOUT = 30000;		// Timeout in msec to shut off listener
 	
-    WebView mAppView;					// WebView object
-    DroidGap mCtx;						// Activity (DroidGap) object
+    WebView webView;					// WebView object
+    DroidGap ctx;						// DroidGap object
 
     int status;							// status of listener
     float heading;						// most recent heading value
@@ -34,19 +41,150 @@ public class CompassListener extends Module implements SensorEventListener{
 	
 	/**
 	 * Constructor.
-	 * 
-	 * @param appView
-	 * @param ctx			The Activity (DroidGap) object
 	 */
-	public CompassListener(WebView appView, DroidGap ctx) {
-		super(appView, ctx);
-		this.mCtx = ctx;
-		this.mAppView = appView;
-		this.sensorManager = (SensorManager) mCtx.getSystemService(Context.SENSOR_SERVICE);
+	public CompassListener() {
         this.timeStamp = 0;
-        this.status = CompassListener.STOPPED;
+        this.setStatus(CompassListener.STOPPED);
 	}
-	
+
+	/**
+	 * Sets the context of the Command. This can then be used to do things like
+	 * get file paths associated with the Activity.
+	 * 
+	 * @param ctx The context of the main Activity.
+	 */
+	public void setContext(DroidGap ctx) {
+		this.ctx = ctx;
+        this.sensorManager = (SensorManager) ctx.getSystemService(Context.SENSOR_SERVICE);
+	}
+
+	/**
+	 * Sets the main View of the application, this is the WebView within which 
+	 * a PhoneGap app runs.
+	 * 
+	 * @param webView The PhoneGap WebView
+	 */
+	public void setView(WebView webView) {
+		this.webView = webView;
+	}
+
+	/**
+	 * Executes the request and returns CommandResult.
+	 * 
+	 * @param action The command to execute.
+	 * @param args JSONArry of arguments for the command.
+	 * @return A CommandResult object with a status and message.
+	 */
+	public PluginResult execute(String action, JSONArray args) {
+		PluginResult.Status status = PluginResult.Status.OK;
+		String result = "";		
+		
+		try {
+			if (action.equals("start")) {
+				this.start();
+			}
+			else if (action.equals("stop")) {
+				this.stop();
+			}
+			else if (action.equals("getStatus")) {
+				int i = this.getStatus();
+				return new PluginResult(status, i);
+			}
+			else if (action.equals("getHeading")) {
+				// If not running, then this is an async call, so don't worry about waiting
+				if (this.status != RUNNING) {
+					int r = this.start();
+					if (r == ERROR_FAILED_TO_START) {
+						return new PluginResult(PluginResult.Status.IO_EXCEPTION, ERROR_FAILED_TO_START);
+					}
+					// Wait until running
+					long timeout = 2000;
+					while ((this.status == STARTING) && (timeout > 0)) {
+						timeout = timeout - 100;
+						try {
+							Thread.sleep(100);
+						} catch (InterruptedException e) {
+							e.printStackTrace();
+						}
+					}
+					if (timeout == 0) {
+						return new PluginResult(PluginResult.Status.IO_EXCEPTION, AccelListener.ERROR_FAILED_TO_START);						
+					}
+				}
+				float f = this.getHeading();
+				return new PluginResult(status, f);
+			}
+			else if (action.equals("setTimeout")) {
+				this.setTimeout(args.getLong(0));
+			}
+			else if (action.equals("getTimeout")) {
+				long l = this.getTimeout();
+				return new PluginResult(status, l);
+			}
+			return new PluginResult(status, result);
+		} catch (JSONException e) {
+			e.printStackTrace();
+			return new PluginResult(PluginResult.Status.JSON_EXCEPTION);
+		}
+	}
+
+	/**
+	 * Identifies if action to be executed returns a value and should be run synchronously.
+	 * 
+	 * @param action	The action to execute
+	 * @return			T=returns value
+	 */
+	public boolean isSynch(String action) {
+		if (action.equals("getStatus")) {
+			return true;
+		}
+		else if (action.equals("getHeading")) {
+			// Can only return value if RUNNING
+			if (this.status == RUNNING) {
+				return true;
+			}
+		}
+		else if (action.equals("getTimeout")) {
+			return true;
+		}
+		return false;
+	}
+
+	/**
+     * Called when the system is about to start resuming a previous activity. 
+     */
+    public void onPause() {
+    }
+
+    /**
+     * Called when the activity will start interacting with the user. 
+     */
+    public void onResume() {
+    }
+    
+    /**
+     * Called when listener is to be shut down and object is being destroyed.
+     */
+	public void onDestroy() {
+		this.stop();
+	}
+
+    /**
+     * Called when an activity you launched exits, giving you the requestCode you started it with,
+     * the resultCode it returned, and any additional data from it. 
+     * 
+     * @param requestCode		The request code originally supplied to startActivityForResult(), 
+     * 							allowing you to identify who this result came from.
+     * @param resultCode		The integer result code returned by the child activity through its setResult().
+     * @param data				An Intent, which can return result data to the caller (various data can be attached to Intent "extras").
+     */
+    public void onActivityResult(int requestCode, int resultCode, Intent intent) {
+    }
+
+    //--------------------------------------------------------------------------
+    // LOCAL METHODS
+    //--------------------------------------------------------------------------
+
     /**
      * Start listening for compass sensor.
      * 
@@ -66,13 +204,13 @@ public class CompassListener extends Module implements SensorEventListener{
 		if (list.size() > 0) {
 			this.mSensor = list.get(0);
 			this.sensorManager.registerListener(this, this.mSensor, SensorManager.SENSOR_DELAY_NORMAL);
-            this.status = CompassListener.STARTING;
             this.lastAccessTime = System.currentTimeMillis();
+            this.setStatus(CompassListener.STARTING);
 		}
 
 		// If error, then set status to error
         else {
-            this.status = CompassListener.ERROR_FAILED_TO_START;
+            this.setStatus(CompassListener.ERROR_FAILED_TO_START);
         }
         
         return this.status;
@@ -85,16 +223,9 @@ public class CompassListener extends Module implements SensorEventListener{
         if (this.status != CompassListener.STOPPED) {
         	this.sensorManager.unregisterListener(this);
         }
-        this.status = CompassListener.STOPPED;
+        this.setStatus(CompassListener.STOPPED);
 	}
 	
-    /**
-     * Called when listener is to be shut down and object is being destroyed.
-     */
-	@Override
-	public void onDestroy() {
-		this.stop();
-	}
 	
 	public void onAccuracyChanged(Sensor sensor, int accuracy) {
 		// TODO Auto-generated method stub	
@@ -113,7 +244,7 @@ public class CompassListener extends Module implements SensorEventListener{
 		// Save heading
         this.timeStamp = System.currentTimeMillis();
 		this.heading = heading;
-		this.status = CompassListener.RUNNING;
+		this.setStatus(CompassListener.RUNNING);
 
 		// If heading hasn't been read for TIMEOUT time, then turn off compass sensor to save power
 		if ((this.timeStamp - this.lastAccessTime) > this.TIMEOUT) {
@@ -145,7 +276,7 @@ public class CompassListener extends Module implements SensorEventListener{
 	 * 
 	 * @param timeout		Timeout in msec.
 	 */
-	public void setTimeout(float timeout) {
+	public void setTimeout(long timeout) {
 		this.TIMEOUT = timeout;
 	}
 	
@@ -154,7 +285,16 @@ public class CompassListener extends Module implements SensorEventListener{
 	 * 
 	 * @return timeout in msec
 	 */
-	public float getTimeout() {
+	public long getTimeout() {
 		return this.TIMEOUT;
 	}
+
+	/**
+	 * Set the status and send it to JavaScript.
+	 * @param status
+	 */
+	private void setStatus(int status) {
+		this.status = status;
+	}
+
 }
