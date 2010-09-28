@@ -11,8 +11,10 @@ function Notification() {
  * @param {String} [buttonLabel="OK"] Label of the close button (default: OK)
  */
 Notification.prototype.alert = function(message, title, buttonLabel) {
-    // Default is to use a browser alert; this will use "index.html" as the title though
-    alert(message);
+    if(notificator)
+    	notificator.alert(message,title,buttonLabel);
+    else
+    	alert(message);
 };
 
 /**

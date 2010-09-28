@@ -24,16 +24,12 @@ package com.phonegap;
 
 
 
-import com.phonegap.api.Plugin;
-import com.phonegap.api.PluginManager;
-
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.res.Configuration;
-import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -52,6 +48,9 @@ import android.webkit.GeolocationPermissions.Callback;
 import android.webkit.WebSettings.LayoutAlgorithm;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+
+import com.phonegap.api.Plugin;
+import com.phonegap.api.PluginManager;
 
 /**
  * This class is the main Android activity that represents the PhoneGap
@@ -246,7 +245,7 @@ public class DroidGap extends Activity {
     		this.callbackServer.destroy();
     	}
     }
-
+        
     /**
      * Add a class that implements a service.
      * 
@@ -274,7 +273,9 @@ public class DroidGap extends Activity {
         
         appView.addJavascriptInterface(this.callbackServer, "CallbackServer");
     	appView.addJavascriptInterface(new SplashScreen(this), "SplashScreen");
-
+    	
+    	appView.addJavascriptInterface(new NotificationManager(this), "notificator");
+    	
     	// Add in support for storage and location for Android 1.X devices
         if (android.os.Build.VERSION.RELEASE.startsWith("1.")) {
             Package pack = this.getClass().getPackage();
@@ -285,6 +286,7 @@ public class DroidGap extends Activity {
 
         }
         
+        //this.addService("Notification", "com.phonegap.DroidGap.Alertmanager");
         this.addService("Geolocation", "com.phonegap.GeoBroker");
         this.addService("Device", "com.phonegap.Device");
         this.addService("Accelerometer", "com.phonegap.AccelListener");
