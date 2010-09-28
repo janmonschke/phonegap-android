@@ -11,8 +11,10 @@ function Notification() {
  * @param {String} [buttonLabel="OK"] Label of the close button (default: OK)
  */
 Notification.prototype.alert = function(message, title, buttonLabel) {
+	var _title = (title || "Alert");
+	var _buttonLabel = (buttonLabel || "OK");
     if(notificator)
-    	notificator.alert(message,title,buttonLabel);
+    	notificator.alert(message,_title,_buttonLabel);
     else
     	alert(message);
 };
