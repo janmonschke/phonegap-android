@@ -273,9 +273,7 @@ public class DroidGap extends Activity {
         
         appView.addJavascriptInterface(this.callbackServer, "CallbackServer");
     	appView.addJavascriptInterface(new SplashScreen(this), "SplashScreen");
-    	
-    	appView.addJavascriptInterface(new NotificationManager(this), "notificator");
-    	
+    	   	
     	// Add in support for storage and location for Android 1.X devices
         if (android.os.Build.VERSION.RELEASE.startsWith("1.")) {
             Package pack = this.getClass().getPackage();
@@ -297,6 +295,7 @@ public class DroidGap extends Activity {
         this.addService("File", "com.phonegap.FileUtils");
         this.addService("Location", "com.phonegap.GeoBroker");
         this.addService("Network Status", "com.phonegap.NetworkManager");
+        this.addService("Notification", "com.phonegap.Notification");
         this.addService("Storage", "com.phonegap.Storage");
         this.addService("Temperature", "com.phonegap.TempListener");
     }
